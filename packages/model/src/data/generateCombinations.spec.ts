@@ -9,6 +9,7 @@
 import generateCombinations from './generateCombinations';
 import asSets from './asSets';
 import type { SetCombinationType, ISetCombination, ISets } from '../model';
+import extractSets from './extractSets';
 
 function expectSet<T>(
   s: ISetCombination<T>,
@@ -248,5 +249,22 @@ describe('generateCombinations', () => {
     ]);
 
     expect(generateCombinations(data, { empty: true })).toHaveLength(Math.pow(2, data.length));
+  });
+
+  describe('sumBy', () => {
+    const data: Array<{ name: string; sets: string[]; value: number }> = [
+      { name: 'A', sets: ['S1', 'S2'], value: 1 },
+      { name: 'AB', sets: ['S1', 'S2'], value: 2 },
+      { name: 'B', sets: ['S1'], value: 3 },
+      { name: 'BC', sets: ['S1'], value: 4 },
+    ];
+
+    const res = generateCombinations(extractSets(data), { sumBy: 'value' });
+
+    expect(res.map((s) => ({ name: s.name, cardinality: s.cardinality }))).toEqual([
+      { cardinality: 10, name: 'S1' },
+      { cardinality: 3, name: 'S2' },
+      { cardinality: 3, name: '(S1 ∩ S2)' },
+    ]);
   });
 });

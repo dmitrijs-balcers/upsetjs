@@ -27,7 +27,7 @@ export function asSet<T, S extends { name: string; elems: readonly T[] }>(set: S
  */
 export type SortSetOrder = 'cardinality' | 'name' | 'cardinality:desc' | 'name:asc' | 'cardinality:asc' | 'name:desc';
 
-export interface PostprocessSetOptions {
+export interface PostprocessSetOptions<T> {
   /**
    * order the set by the given criteria
    */
@@ -36,6 +36,12 @@ export interface PostprocessSetOptions {
    * limit to the top N sets after sorting
    */
   limit?: number;
+
+  /**
+   * key to use for the sum of the elements for cardinality
+   * @default undefined - will use elements.length
+   */
+  sumBy?: keyof T;
 }
 
 function toOrder<T, S extends ISet<T>>(order?: SortSetOrder): (a: S, b: S) => number {
@@ -58,7 +64,7 @@ function toOrder<T, S extends ISet<T>>(order?: SortSetOrder): (a: S, b: S) => nu
 /**
  * @internal
  */
-export function postprocessSets<T, S extends ISet<T>>(sets: readonly S[], options: PostprocessSetOptions = {}) {
+export function postprocessSets<T, S extends ISet<T>>(sets: readonly S[], options: PostprocessSetOptions<T> = {}) {
   let r = sets as S[];
   if (options.order) {
     const order = toOrder(options.order);
@@ -77,7 +83,7 @@ export function postprocessSets<T, S extends ISet<T>>(sets: readonly S[], option
  */
 export default function asSets<T, S extends { name: string; elems: readonly T[] }>(
   sets: readonly S[],
-  options: PostprocessSetOptions = {}
+  options: PostprocessSetOptions<T> = {}
 ): (S & ISet<T>)[] {
   return postprocessSets(sets.map(asSet), options);
 }

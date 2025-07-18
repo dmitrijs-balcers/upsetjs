@@ -10,6 +10,7 @@ import { isSetLike } from '../validators';
 import { postprocessCombinations, PostprocessCombinationsOptions } from './asCombinations';
 import { SET_JOINERS } from './constants';
 import { mergeColors as mergeDefaultColors } from '../colors';
+import { cardinality } from './utils';
 
 export interface GenerateSetCombinationsOptions<T = any> extends PostprocessCombinationsOptions {
   /**
@@ -27,6 +28,12 @@ export interface GenerateSetCombinationsOptions<T = any> extends PostprocessComb
    * @default Infinity
    */
   max?: number;
+
+  /**
+   * key to use for the sum of the elements for cardinality
+   * @default undefined - will use elements.length
+   */
+  sumBy?: keyof T;
   /**
    * include empty intersections
    * @default false
@@ -41,6 +48,7 @@ export interface GenerateSetCombinationsOptions<T = any> extends PostprocessComb
    * just makes sense with min=0
    */
   notPartOfAnySet?: readonly T[] | number;
+
   /**
    * optional elem key function
    * @param v
@@ -69,6 +77,7 @@ export function generateSet<T>(
   name: string,
   combo: ReadonlySet<ISet<T>>,
   elems: readonly T[],
+  sumBy: keyof T | undefined,
   mergeColors: (colors: readonly (string | undefined)[]) => string | undefined
 ) {
   return {
@@ -77,7 +86,7 @@ export function generateSet<T>(
     color: mergeColors(Array.from(combo).map((s) => s.color)),
     sets: combo,
     name,
-    cardinality: elems.length,
+    cardinality: cardinality(elems, sumBy),
     degree: combo.size,
   };
 }
@@ -91,6 +100,7 @@ export function mergeIntersection<T, B>(
   lookup: Map<ISetLike<T>, ReadonlySet<B>>,
   toKey: (v: T) => B,
   setIndex: ReadonlyMap<ISet<T>, number>,
+  sumBy: keyof T | undefined,
   type: SetCombinationType,
   mergeColors: (colors: readonly (string | undefined)[]) => string | undefined
 ) {
@@ -99,7 +109,7 @@ export function mergeIntersection<T, B>(
   const name = generateName(merged, setIndex, SET_JOINERS[type]);
 
   if (a.cardinality === 0 || b.cardinality === 0) {
-    return generateSet(type, name, merged, [], mergeColors);
+    return generateSet(type, name, merged, [], sumBy, mergeColors);
   }
   let small = a;
   let big = b;
@@ -111,7 +121,7 @@ export function mergeIntersection<T, B>(
   const keySet = new Set<B>();
   const bigLookup: ReadonlySet<B> = lookup.get(big)!;
   const elems: T[] = [];
-  const l = small.elems.length;
+  const l = cardinality(small.elems, sumBy);
   for (let i = 0; i < l; i++) {
     const e = small.elems[i];
     const key = toKey(e);
@@ -121,7 +131,7 @@ export function mergeIntersection<T, B>(
     keySet.add(key);
     elems.push(e);
   }
-  const r = generateSet(type, name, merged, elems, mergeColors);
+  const r = generateSet(type, name, merged, elems, sumBy, mergeColors);
   lookup.set(r, keySet);
   return r;
 }
@@ -135,6 +145,7 @@ export function mergeUnion<T, B>(
   lookup: Map<ISetLike<T>, ReadonlySet<B>>,
   toKey: (v: T) => B,
   setIndex: ReadonlyMap<ISet<T>, number>,
+  sumBy: keyof T | undefined,
   type: SetCombinationType,
   mergeColors: (colors: readonly (string | undefined)[]) => string | undefined
 ) {
@@ -143,12 +154,12 @@ export function mergeUnion<T, B>(
   const name = generateName(merged, setIndex, SET_JOINERS[type]);
 
   if (a.cardinality === 0) {
-    const r = generateSet(type, name, merged, b.elems, mergeColors);
+    const r = generateSet(type, name, merged, b.elems, sumBy, mergeColors);
     lookup.set(r, lookup.get(b)!);
     return r;
   }
   if (b.cardinality === 0) {
-    const r = generateSet(type, name, merged, a.elems, mergeColors);
+    const r = generateSet(type, name, merged, a.elems, sumBy, mergeColors);
     lookup.set(r, lookup.get(a)!);
     return r;
   }
@@ -171,7 +182,7 @@ export function mergeUnion<T, B>(
     keySet.add(key);
     elems.push(e);
   });
-  const r = generateSet(type, name, merged, elems, mergeColors);
+  const r = generateSet(type, name, merged, elems, sumBy, mergeColors);
   lookup.set(r, keySet);
   return r;
 }
@@ -182,6 +193,7 @@ export function generateEmptySet<T, B>(
   allElements: readonly T[],
   lookup: Map<ISetLike<T>, ReadonlySet<B>>,
   toKey: (v: T) => B,
+  sumBy: keyof T | undefined,
   mergeColors: (colors: readonly (string | undefined)[]) => string | undefined
 ): ISetCombination<T> {
   if (typeof notPartOfAnySet === 'number') {
@@ -201,15 +213,16 @@ export function generateEmptySet<T, B>(
     };
   }
   if (Array.isArray(notPartOfAnySet)) {
-    return generateSet(type, '()', new Set(), notPartOfAnySet, mergeColors);
+    return generateSet(type, '()', new Set(), notPartOfAnySet, sumBy, mergeColors);
   }
   const lookupArr = Array.from(lookup!.values());
   const elems = allElements.filter((e) => {
     const k = toKey(e);
     return lookupArr.every((s) => !s.has(k));
   });
-  return generateSet(type, '()', new Set(), elems, mergeColors);
+  return generateSet(type, '()', new Set(), elems, sumBy, mergeColors);
 }
+
 /**
  * generate set intersection/unions for a given list of sets
  * @param sets the sets with their elements
@@ -225,6 +238,7 @@ export default function generateCombinations<T = any>(
     max = Number.POSITIVE_INFINITY,
     empty = false,
     elems: allElements = [],
+    sumBy,
     notPartOfAnySet,
     toElemKey,
     mergeColors = mergeDefaultColors,
@@ -264,11 +278,11 @@ export default function generateCombinations<T = any>(
       elems = s.elems.filter((e) => othersSets.every((o) => !o.has(e)));
     }
 
-    if (elems.length === s.cardinality) {
+    if (cardinality(elems, sumBy) === s.cardinality) {
       combinations.push(s);
       return;
     }
-    const sDistinct = generateSet(type, s.name, s.sets, elems, mergeColors);
+    const sDistinct = generateSet(type, s.name, s.sets, elems, sumBy, mergeColors);
 
     if (sDistinct.cardinality === 0 && !empty) {
       return;
@@ -291,7 +305,7 @@ export default function generateCombinations<T = any>(
       const sub: ISetCombination<T>[] = [];
       for (let j = i + 1; j < l; j++) {
         const b = arr[j];
-        const ab = calc(a, b, lookup, toKey, setIndex, type, mergeColors);
+        const ab = calc(a, b, lookup, toKey, setIndex, sumBy, type, mergeColors);
         push(ab);
         if (type === 'union' || ab.cardinality > 0 || empty) {
           sub.push(ab);
@@ -305,14 +319,14 @@ export default function generateCombinations<T = any>(
 
   if (min <= 0) {
     if (toElemKey) {
-      push(generateEmptySet(type, notPartOfAnySet, allElements, setKeyElems!, toElemKey, mergeColors));
+      push(generateEmptySet(type, notPartOfAnySet, allElements, setKeyElems!, toElemKey, sumBy, mergeColors));
     } else {
-      push(generateEmptySet(type, notPartOfAnySet, allElements, setDirectElems!, (v) => v, mergeColors));
+      push(generateEmptySet(type, notPartOfAnySet, allElements, setDirectElems!, (v) => v, sumBy, mergeColors));
     }
   }
 
   const degree1 = sets.map((s) => {
-    const r = generateSet(type, s.name, new Set([s]), s.elems, mergeColors);
+    const r = generateSet(type, s.name, new Set([s]), s.elems, sumBy, mergeColors);
     setElems.set(r, setElems.get(s)!);
     push(r);
     return r;

@@ -37,3 +37,10 @@ export function byGroup<E, S extends { sets: ReadonlySet<E> }>(sets: readonly E[
     return aIndex - bIndex;
   };
 }
+
+export function cardinality<T>(elems: ReadonlyArray<T>, sumBy?: keyof T): number {
+  if (sumBy) {
+    return elems.reduce((acc, v) => acc + Number(v[sumBy] || 0), 0);
+  }
+  return elems.length;
+}
